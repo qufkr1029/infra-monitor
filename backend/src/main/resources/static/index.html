@@ -1,0 +1,71 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="light">
+  <title>서버 모니터링 · infra-monitor</title>
+  <link rel="stylesheet" href="/assets/style.css">
+  <script src="/assets/app.js" defer></script>
+</head>
+<body>
+  <header class="header">
+    <div class="header-inner">
+      <a class="brand" href="/" aria-label="infra-monitor 홈"><span class="brand-mark" aria-hidden="true">▥</span> infra-monitor</a>
+      <span class="badge" id="connection" role="status">연결 확인 중</span>
+    </div>
+  </header>
+
+  <main>
+    <section class="toolbar" aria-labelledby="page-title">
+      <div>
+        <p class="eyebrow">SERVER OVERVIEW</p>
+        <h1 id="page-title">서버 모니터링</h1>
+        <p class="subtitle">서버의 현재 자원 사용량을 확인하세요.</p>
+      </div>
+      <div class="controls">
+        <div class="server-field">
+          <label for="server">모니터링 서버 <span id="server-count">0대</span></label>
+          <div class="select-wrap"><select id="server" disabled><option>서버 확인 중</option></select></div>
+        </div>
+        <button type="button" id="refresh">새로고침</button>
+      </div>
+    </section>
+
+    <div class="notice" id="notice" role="status">첫 수집 데이터를 확인하고 있습니다.</div>
+
+    <section class="metrics" aria-label="현재 자원 사용량" aria-busy="true" id="metrics">
+      <article class="card">
+        <div class="card-heading"><h2>CPU</h2><span>전체 CPU 기준</span></div>
+        <p class="metric-value"><span id="cpu-value">—</span><span class="unit">%</span></p>
+        <progress id="cpu-bar" max="100" value="0" aria-label="CPU 사용률"></progress>
+        <p class="card-description">수집 구간의 평균 사용률</p>
+      </article>
+      <article class="card">
+        <div class="card-heading"><h2>메모리</h2><span>가용 메모리 기준</span></div>
+        <p class="metric-value"><span id="memory-value">—</span><span class="unit">%</span></p>
+        <progress id="memory-bar" max="100" value="0" aria-label="메모리 사용률"></progress>
+        <p class="card-description" id="memory-capacity">사용 — / 전체 —</p>
+      </article>
+      <article class="card">
+        <div class="card-heading"><h2>파일시스템</h2><span id="filesystem-mount">/</span></div>
+        <p class="metric-value"><span id="filesystem-value">—</span><span class="unit">%</span></p>
+        <progress id="filesystem-bar" max="100" value="0" aria-label="파일시스템 사용률"></progress>
+        <p class="card-description" id="filesystem-capacity">사용 — / 전체 —</p>
+      </article>
+    </section>
+
+    <section class="panel" aria-labelledby="filesystem-title">
+      <div class="panel-heading"><h2 id="filesystem-title">파일시스템 상세</h2><span>용량 단위: GiB</span></div>
+      <div id="filesystem-list" class="filesystem-list"><p class="empty">수집된 파일시스템이 없습니다.</p></div>
+    </section>
+
+    <section class="panel collection" aria-label="수집 상태">
+      <div><span class="detail-label">마지막 수집</span><strong id="collected-at">—</strong><span id="sample-age" class="detail-hint">수집 대기</span></div>
+      <div><span class="detail-label">백엔드 수신</span><strong id="received-at">—</strong><span class="detail-hint">한국 시간 · KST</span></div>
+      <div><span class="detail-label">화면 자동 갱신</span><strong>10초마다</strong><span class="detail-hint" id="checked-at">마지막 조회 —</span></div>
+    </section>
+    <footer>최신 수집값을 표시합니다. 과거 이력은 저장하지 않습니다.</footer>
+  </main>
+</body>
+</html>

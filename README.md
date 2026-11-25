@@ -2,12 +2,13 @@
 
 Linux 호스트 전체 CPU·메모리와 루트 파일시스템(`/`)을 수집하는 초기 데모입니다.
 Python 수집기가 10초마다 지표를 콘솔·파일에 기록하고 Spring Boot 백엔드로 전송합니다.
-백엔드는 서버별 최신값만 메모리에 보관합니다. 웹 화면과 DB 저장은 아직 없습니다.
+백엔드는 서버별 최신값만 메모리에 보관합니다. `/`에서 웹 화면을 제공하며 DB 저장은 아직 없습니다.
 
 ## 구성
 
 - `collector/`: Python 3.15, 표준 라이브러리 기반 수집·파일 기록·HTTP 전송
 - `backend/`: Java 25, Spring Boot 4.2.0, Gradle 9.8.0, Spring Web MVC·Validation
+- `backend/src/main/resources/static/`: HTML·CSS·JavaScript 모니터링 화면. 별도 프런트엔드 빌드나 외부 CDN 없음
 - `docker-compose.yml`: 백엔드·수집기 실행. 호스트에 공개하는 포트는 없습니다.
 - `Jenkinsfile`: 두 이미지 빌드 후 배포
 
@@ -109,10 +110,25 @@ Proxy Host에 사용할 도메인을 등록하고 다음 값을 지정합니다.
 
 `infra-monitor-backend`는 공유 네트워크에 지정한 백엔드 접근용 별칭입니다. 프로젝트와 역할을 구분하도록 사용합니다.
 별도의 `ports` 설정이나 호스트 포트 추가 공개는 필요하지 않습니다.
-연결 후 해당 도메인의 `/api/health`와 `/api/metrics/latest`로 확인할 수 있습니다. 아직 웹 화면은 없습니다.
+연결 후 해당 도메인의 `/`에서 모니터링 화면을 볼 수 있습니다.
+`/api/health`와 `/api/metrics/latest`로 API를 직접 확인할 수도 있습니다.
 현재 백엔드에는 API 인증이 없으므로 외부에서 접근할 때는 NPM의 Access List 등으로 접근 대상을 제한합니다.
 
 참고: [Docker Compose 외부 네트워크](https://docs.docker.com/compose/how-tos/networking/#use-an-existing-network).
+
+## 모니터링 화면
+
+- 주소: NPM에 설정한 도메인의 `/`
+- 서버를 선택해 전체 CPU·메모리 사용률과 루트 파일시스템 사용량 확인
+- 파일시스템별 사용·전체·가용 용량을 GiB 단위로 표시
+- 마지막 수집·백엔드 수신 시각은 한국 시간(KST)으로 표시
+- 화면은 10초마다 자동 조회하며 새로고침 버튼으로 즉시 조회 가능
+- 선택한 서버의 수집 시각이 30초 이상 지났으면 수집 지연으로 표시
+- API 조회 실패 시 마지막 조회값을 유지하고 오류 표시. 다음 자동 조회에서 복구 시도
+- 첫 수집 전에는 수집 대기 표시. 백엔드 재시작 시 다음 지표를 받을 때까지 빈 화면 상태
+
+화면은 `/api/metrics/latest`를 같은 도메인에서 호출합니다. NPM에서 API 응답 캐싱은 사용하지 않습니다.
+지연 판정은 브라우저 시각과 수집 시각을 비교하므로 서버·사용자 PC 시각이 맞아야 합니다.
 
 ## 설정
 
