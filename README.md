@@ -12,7 +12,8 @@ Python 수집기가 10초마다 지표를 콘솔·파일에 기록하고 Spring 
 - `Jenkinsfile`: 두 이미지 빌드 후 배포
 
 수집기는 Compose 내부 주소 `http://backend:8080/api/metrics`로 전송합니다.
-기존 WAS의 호스트 포트나 `npm-network`를 사용하지 않으므로 기존 8080 포트와 충돌하지 않습니다.
+백엔드는 기본 네트워크와 기존 `npm-network`에 함께 연결합니다. 수집기는 기본 네트워크만 사용합니다.
+호스트 포트는 공개하지 않으므로 기존 WAS의 8080 포트와 충돌하지 않습니다.
 백엔드와 연결하기 위해 수집기의 `network_mode: none`은 제거했습니다.
 
 ## Jenkins 배포 준비
@@ -57,10 +58,16 @@ Jenkins에서 보이는 배포 경로가 호스트 경로와 다른 마운트라
 파이프라인은 `infra-monitor-collector:latest`와 `infra-monitor-backend:latest` 이미지를 빌드하고,
 `/home/ubuntu/docker/projects/infra-monitor`를 생성한 뒤 Compose 파일을 복사해 컨테이너를 교체합니다.
 Jenkins 실행 계정에 해당 경로의 생성·쓰기 권한이 있어야 합니다. 권한이 없다면 호스트에서 미리 생성하고
-기존 boot 배포 폴더와 같은 방식으로 권한을 설정합니다. 기존 boot 이미지·컨테이너·네트워크는 사용하지 않습니다.
+기존 boot 배포 폴더와 같은 방식으로 권한을 설정합니다. 기존 boot 이미지·컨테이너와는 분리하고 `npm-network`만 공유합니다.
 이미지 정리는 공유 Docker 엔진의 다른 프로젝트에 영향을 줄 수 있어 파이프라인에 넣지 않았습니다.
 
 ## 배포 후 서버에서 확인
+
+배포 전에 기존 `npm-network`가 있어야 합니다. 기존 NPM·boot 서비스가 쓰는 네트워크를 그대로 연결합니다.
+
+```bash
+docker network inspect npm-network
+```
 
 ```bash
 cd /home/ubuntu/docker/projects/infra-monitor
@@ -90,6 +97,22 @@ docker compose ps
 # 중지 및 컨테이너 제거
 docker compose down
 ```
+
+## Nginx Proxy Manager 연결
+
+NPM 컨테이너도 기존처럼 `npm-network`에 연결되어 있어야 합니다.
+Proxy Host에 사용할 도메인을 등록하고 다음 값을 지정합니다.
+
+- Scheme: `http`
+- Forward Hostname / IP: `infra-monitor`
+- Forward Port: `8080`
+
+`infra-monitor`는 공유 네트워크에 지정한 서비스 접근용 별칭입니다. 다른 프로젝트의 일반적인 `backend` 이름과 혼동하지 않도록 사용합니다.
+별도의 `ports` 설정이나 호스트 포트 추가 공개는 필요하지 않습니다.
+연결 후 해당 도메인의 `/api/health`와 `/api/metrics/latest`로 확인할 수 있습니다. 아직 웹 화면은 없습니다.
+현재 백엔드에는 API 인증이 없으므로 외부에서 접근할 때는 NPM의 Access List 등으로 접근 대상을 제한합니다.
+
+참고: [Docker Compose 외부 네트워크](https://docs.docker.com/compose/how-tos/networking/#use-an-existing-network).
 
 ## 설정
 
@@ -124,7 +147,8 @@ POST 형식은 수집 로그의 JSON과 같습니다. 시간은 UTC, 용량은 �
 파일 기록에 실패해도 백엔드 전송은 시도합니다.
 독립 실행 시 `METRICS_API_URL`을 지정하지 않으면 기존처럼 파일·콘솔 기록만 수행합니다.
 백엔드 재시작 시 메모리의 최신값은 사라지고 다음 수신 시 채워집니다.
-현재 인증 기능 없이 Compose 내부에서만 통신합니다. 추가 서버의 원격 연결과 외부 공개는 후속 단계입니다.
+현재 백엔드에는 인증 기능이 없습니다. 수집기는 기본 네트워크에서 전송하며, 도메인 접근은 NPM을 경유합니다.
+추가 서버의 원격 수집기 연결은 후속 단계입니다.
 
 ## 수집 로그 파일
 
