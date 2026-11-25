@@ -1,0 +1,35 @@
+# Local environment and credentials
+.env
+.env.*
+!.env.example
+!.env.*.example
+.venv/
+venv/
+
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.pytest_cache/
+.ruff_cache/
+
+# Java / Gradle
+.gradle/
+build/
+target/
+
+# Frontend
+node_modules/
+dist/
+
+# Local editor and OS files
+.idea/
+.vscode/
+*.iml
+.DS_Store
+Thumbs.db
+Desktop.ini
+
+# Runtime files
+*.log
+logs/
