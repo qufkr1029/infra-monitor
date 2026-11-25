@@ -104,10 +104,10 @@ NPM 컨테이너도 기존처럼 `npm-network`에 연결되어 있어야 합니�
 Proxy Host에 사용할 도메인을 등록하고 다음 값을 지정합니다.
 
 - Scheme: `http`
-- Forward Hostname / IP: `infra-monitor`
+- Forward Hostname / IP: `infra-monitor-backend`
 - Forward Port: `8080`
 
-`infra-monitor`는 공유 네트워크에 지정한 서비스 접근용 별칭입니다. 다른 프로젝트의 일반적인 `backend` 이름과 혼동하지 않도록 사용합니다.
+`infra-monitor-backend`는 공유 네트워크에 지정한 백엔드 접근용 별칭입니다. 프로젝트와 역할을 구분하도록 사용합니다.
 별도의 `ports` 설정이나 호스트 포트 추가 공개는 필요하지 않습니다.
 연결 후 해당 도메인의 `/api/health`와 `/api/metrics/latest`로 확인할 수 있습니다. 아직 웹 화면은 없습니다.
 현재 백엔드에는 API 인증이 없으므로 외부에서 접근할 때는 NPM의 Access List 등으로 접근 대상을 제한합니다.
