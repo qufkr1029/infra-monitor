@@ -23,7 +23,10 @@ Python 수집기가 10초마다 지표를 콘솔·파일에 기록하고 Spring 
 백엔드는 서버에 있는 `gradle:9.8-jdk25-alpine` 이미지의 Gradle로 빌드합니다.
 Docker 빌드에서는 Wrapper를 실행하지 않아 Gradle 배포판을 별도로 다운로드하지 않습니다.
 최종 실행 이미지는 `eclipse-temurin:25-jre-alpine`입니다.
-Spring 라이브러리 등 의존성은 최초 빌드 때 다운로드하며, 이후에는 BuildKit 캐시를 재사용합니다.
+기존 Docker 빌더에서도 실행되도록 BuildKit 전용 옵션은 사용하지 않습니다.
+소스 복사 전에 의존성을 해석하는 단계를 분리해 해당 Docker 레이어를 재사용합니다.
+Gradle 캐시는 이미지의 기본 볼륨 경로 대신 `/opt/gradle-cache`에 저장해 기존 빌더에서도 레이어에 남깁니다.
+`dependencies` 단계가 모든 라이브러리 JAR를 미리 다운로드하는 것은 아니므로 실제 빌드에서 추가 다운로드가 발생할 수 있습니다.
 로컬 개발용 Gradle Wrapper도 9.8.0으로 맞췄으며, PC에 해당 배포판이 없으면 최초 실행 시 다운로드합니다.
 
 전제: Jenkins 작업은 A서버의 Docker 엔진을 사용해야 합니다. Jenkins가 컨테이너에서 실행된다면

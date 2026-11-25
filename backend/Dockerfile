@@ -1,10 +1,11 @@
 FROM gradle:9.8-jdk25-alpine AS build
-ENV GRADLE_USER_HOME=/home/gradle/.gradle
+# Keep caches outside the Gradle image's declared VOLUME for the legacy builder.
+ENV GRADLE_USER_HOME=/opt/gradle-cache
 WORKDIR /workspace
 COPY build.gradle settings.gradle ./
+RUN gradle --no-daemon dependencies
 COPY src ./src
-RUN --mount=type=cache,id=infra-monitor-gradle,target=/home/gradle/.gradle \
-    gradle --no-daemon bootJar
+RUN gradle --no-daemon bootJar
 
 FROM eclipse-temurin:25-jre-alpine
 WORKDIR /app
