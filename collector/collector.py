@@ -7,10 +7,28 @@ from pathlib import Path
 import signal
 import sys
 import threading
+import time
 from datetime import datetime, timedelta, timezone
+from urllib.error import URLError
+from urllib.parse import urlsplit
+from urllib.request import ProxyHandler, Request, build_opener
 
 
 KST = timezone(timedelta(hours=9), "KST")
+# Container-to-container traffic must not be routed through an inherited proxy.
+HTTP = build_opener(ProxyHandler({}))
+
+
+def send_metrics(api_url, line):
+    request = Request(
+        api_url,
+        data=line.encode("utf-8"),
+        headers={"Content-Type": "application/json"},
+        method="POST",
+    )
+    with HTTP.open(request, timeout=3) as response:
+        if not 200 <= response.status < 300:
+            raise OSError(f"Metrics API returned HTTP {response.status}")
 
 
 class CollectorLog:
@@ -118,11 +136,18 @@ def main():
             raise RuntimeError("Linux is required; run Docker Compose on the target Linux host")
         read_memory(proc_path)
         read_filesystem(root_path)
+        api_url = os.environ.get("METRICS_API_URL", "").strip()
+        if api_url:
+            parsed_url = urlsplit(api_url)
+            if parsed_url.scheme not in ("http", "https") or not parsed_url.hostname:
+                raise ValueError("METRICS_API_URL must be an absolute HTTP(S) URL")
     except (OSError, ValueError, KeyError, RuntimeError) as error:
         report_error(log, f"Collector startup failed: {error}")
         return 1
 
-    while not stop.wait(interval):
+    next_collection = time.monotonic() + interval
+    while not stop.wait(max(0, next_collection - time.monotonic())):
+        next_collection = time.monotonic() + interval
         try:
             current = read_cpu(proc_path)
             usage = cpu_percent(previous, current)
@@ -136,7 +161,15 @@ def main():
             }
             line = json.dumps(sample)
             print(line, flush=True)
-            log.write(line)
+            try:
+                log.write(line)
+            except OSError as error:
+                report_error(log, f"Log write failed: {error}")
+            if api_url:
+                try:
+                    send_metrics(api_url, line)
+                except (OSError, URLError) as error:
+                    report_error(log, f"Metrics delivery failed (next interval will retry): {error}")
         except (OSError, ValueError, KeyError) as error:
             report_error(log, f"Collection failed: {error}")
             # Reset the baseline so the next success measures a fresh interval.

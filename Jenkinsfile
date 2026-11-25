@@ -34,6 +34,7 @@ pipeline {
         stage('Build Image') {
             steps {
                 sh 'docker build -t infra-monitor-collector:latest ./collector'
+                sh 'docker build -t infra-monitor-backend:latest ./backend'
             }
         }
 

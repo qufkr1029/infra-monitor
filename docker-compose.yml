@@ -1,6 +1,10 @@
 name: infra-monitor
 
 services:
+  backend:
+    image: infra-monitor-backend:latest
+    restart: unless-stopped
+
   collector:
     image: infra-monitor-collector:latest
     restart: unless-stopped
@@ -10,6 +14,9 @@ services:
       HOST_ROOT_PATH: /host/root
       COLLECTOR_LOG_DIR: /app/collector_logs
       LOG_MAX_BYTES: ${LOG_MAX_BYTES:-5242880}
+      METRICS_API_URL: http://backend:8080/api/metrics
+    depends_on:
+      - backend
     volumes:
       - type: bind
         source: /proc
@@ -33,9 +40,3 @@ services:
       - ALL
     security_opt:
       - no-new-privileges:true
-    network_mode: none
-    logging:
-      driver: json-file
-      options:
-        max-size: "5m"
-        max-file: "2"
