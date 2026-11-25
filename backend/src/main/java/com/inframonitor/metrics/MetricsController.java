@@ -1,6 +1,7 @@
 package com.inframonitor.metrics;
 
 import jakarta.validation.Valid;
+import org.springframework.dao.DataAccessException;
 import org.springframework.http.HttpStatus;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
@@ -25,6 +26,11 @@ public class MetricsController {
 
     @GetMapping("/health")
     public Map<String, String> health() {
+        try {
+            service.checkConnection();
+        } catch (DataAccessException error) {
+            throw new ResponseStatusException(HttpStatus.SERVICE_UNAVAILABLE, "Database unavailable");
+        }
         return Map.of("status", "UP");
     }
 

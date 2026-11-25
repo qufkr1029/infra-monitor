@@ -4,6 +4,11 @@ services:
   backend:
     image: infra-monitor-backend:latest
     restart: unless-stopped
+    environment:
+      DB_HOST: ${DB_HOST:-168.107.17.252}
+      DB_PORT: ${DB_PORT:-5432}
+      DB_NAME: ${DB_NAME:-infra-monitor}
+      DB_USER: ${DB_USER:-postgres}
     networks:
       default: {}
       npm_shared_net:

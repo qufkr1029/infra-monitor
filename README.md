@@ -2,12 +2,12 @@
 
 Linux 호스트 전체 CPU·메모리와 루트 파일시스템(`/`)을 수집하는 초기 데모입니다.
 Python 수집기가 10초마다 지표를 콘솔·파일에 기록하고 Spring Boot 백엔드로 전송합니다.
-백엔드는 서버별 최신값만 메모리에 보관합니다. `/`에서 웹 화면을 제공하며 DB 저장은 아직 없습니다.
+백엔드는 PostgreSQL에 수집 지표를 저장합니다. `/`에서 서버별 최신값을 보여주는 웹 화면을 제공합니다.
 
 ## 구성
 
 - `collector/`: Python 3.15, 표준 라이브러리 기반 수집·파일 기록·HTTP 전송
-- `backend/`: Java 25, Spring Boot 4.2.0, Gradle 9.8.0, Spring Web MVC·Validation
+- `backend/`: Java 25, Spring Boot 4.2.0, Gradle 9.8.0, Spring Data JPA + Hibernate, Spring Web MVC·Validation, PostgreSQL
 - `backend/src/main/resources/static/`: HTML·CSS·JavaScript 모니터링 화면. 별도 프런트엔드 빌드나 외부 CDN 없음
 - `docker-compose.yml`: 백엔드·수집기 실행. 호스트에 공개하는 포트는 없습니다.
 - `Jenkinsfile`: 두 이미지 빌드 후 배포
@@ -18,6 +18,9 @@ Python 수집기가 10초마다 지표를 콘솔·파일에 기록하고 Spring 
 백엔드와 연결하기 위해 수집기의 `network_mode: none`은 제거했습니다.
 
 ## Jenkins 배포 준비
+
+DB 접속 기본값과 요청받은 비밀번호는 `backend/src/main/resources/application.properties`에 설정되어 있습니다.
+DB 비밀번호용 `.env` 설정은 필요하지 않습니다. Jenkins는 기존 `.env`를 생성·덮어쓰지 않습니다.
 
 기존 boot 서비스처럼 Jenkins에서 이미지를 빌드하고, 배포 폴더에는 Compose 파일만 복사합니다.
 파일명은 기존 서비스에 맞춰 `docker-compose.yml`을 사용합니다.
@@ -84,7 +87,8 @@ docker compose exec collector python -c 'import urllib.request; print(urllib.req
 docker compose exec collector python -c 'import urllib.request; print(urllib.request.urlopen("http://backend:8080/api/metrics/latest", timeout=3).read().decode())'
 ```
 
-`/api/health`는 `{"status":"UP"}`을 반환합니다. 최신값은 첫 수신 전에는 `[]`이며,
+`/api/health`는 DB 연결까지 정상이면 `{"status":"UP"}`을 반환하며, DB 연결 실패 시 HTTP 503입니다.
+최신값은 DB에 지표가 없으면 `[]`이며,
 수신 후 `metrics.host_id`가 `prod-web-01`인 항목과 `received_at`이 표시됩니다.
 `depends_on`은 백엔드 시작 순서만 지정합니다. 백엔드 준비 전 전송에 실패하더라도 수집은 계속되며 다음 주기에 다시 전송합니다.
 
@@ -125,7 +129,7 @@ Proxy Host에 사용할 도메인을 등록하고 다음 값을 지정합니다.
 - 화면은 10초마다 자동 조회하며 새로고침 버튼으로 즉시 조회 가능
 - 선택한 서버의 수집 시각이 30초 이상 지났으면 수집 지연으로 표시
 - API 조회 실패 시 마지막 조회값을 유지하고 오류 표시. 다음 자동 조회에서 복구 시도
-- 첫 수집 전에는 수집 대기 표시. 백엔드 재시작 시 다음 지표를 받을 때까지 빈 화면 상태
+- DB에 지표가 없으면 수집 대기 표시. 백엔드 재시작 후에도 저장된 최신값 표시
 
 화면은 `/api/metrics/latest`를 같은 도메인에서 호출합니다. NPM에서 API 응답 캐싱은 사용하지 않습니다.
 지연 판정은 브라우저 시각과 수집 시각을 비교하므로 서버·사용자 PC 시각이 맞아야 합니다.
@@ -137,24 +141,89 @@ Proxy Host에 사용할 도메인을 등록하고 다음 값을 지정합니다.
 
 ```bash
 cd /home/ubuntu/docker/projects/infra-monitor
-echo 'COLLECTION_INTERVAL_SECONDS=10' > .env
-# 원하는 간격으로 수정 후 적용
+nano .env
+# 기존 DB 설정을 유지하고 COLLECTION_INTERVAL_SECONDS를 원하는 값으로 수정 후 적용
 docker compose up -d
 ```
 
 최초 Jenkins 배포 후에는 서버의 Compose 파일과 로컬 이미지로 재실행할 수 있습니다.
 `docker compose restart`는 기존 컨테이너 재시작이며 새 이미지나 환경변수를 적용하지 않습니다.
 
+## PostgreSQL 설정
+
+대상은 B서버 PostgreSQL 18, `168.107.17.252:5432`, DB `infra-monitor`, 사용자 `postgres`입니다.
+DB 자체는 미리 생성되어 있어야 합니다. 없다면 B서버에서 관리자 계정으로 생성합니다.
+
+```sql
+CREATE DATABASE "infra-monitor";
+```
+
+접속 정보와 비밀번호는 `backend/src/main/resources/application.properties`에 설정합니다.
+현재 제공받은 접속값이 반영되어 있으며 비밀번호 변경 시 이미지를 다시 빌드·배포합니다.
+비밀번호에 포함된 `#`는 properties 값 중간에 있을 때 주석으로 처리되지 않습니다.
+
+수집 간격·로그 크기 또는 DB 주소·이름·사용자를 바꾸려면 A서버의
+`/home/ubuntu/docker/projects/infra-monitor/.env`에서 아래 값을 변경할 수 있습니다.
+
+```dotenv
+COLLECTION_INTERVAL_SECONDS=10
+LOG_MAX_BYTES=5242880
+DB_HOST=168.107.17.252
+DB_PORT=5432
+DB_NAME=infra-monitor
+DB_USER=postgres
+```
+
+B서버가 A서버에서 오는 PostgreSQL 연결을 허용해야 합니다. 연결 문제 발생 시 B서버의
+리스닝 설정·`pg_hba.conf`·방화벽에서 A서버의 접속을 확인합니다.
+
+백엔드가 시작되면 `schema.sql`로 아래 두 테이블과 중복 방지 인덱스를 생성합니다.
+기존 데이터는 삭제하지 않습니다. 계정에는 해당 DB의 테이블·인덱스 생성 및 읽기·쓰기 권한이 필요합니다.
+Hibernate는 생성된 테이블이 엔티티와 맞는지 `ddl-auto=validate`로 확인하며 자동 변경·삭제하지 않습니다.
+
+- `server_metrics`: 서버 ID, 수집·수신 시각, CPU 사용률, 메모리 전체·사용·가용량과 사용률
+- `filesystem_metrics`: 파일시스템 지표 ID, 서버 지표 ID, 목록 순서, 마운트 경로, 전체·사용·가용량과 사용률
+
+`ServerMetric`과 `FilesystemMetric` 엔티티를 일대다/다대일 관계로 연결하고,
+Spring Data JPA 저장소와 Hibernate의 cascade로 함께 저장합니다.
+조회 결과는 트랜잭션 안에서 기존 API DTO로 변환하며, 엔티티 자체를 JSON으로 노출하지 않습니다.
+
+한 수집값의 서버 지표와 모든 파일시스템은 하나의 트랜잭션으로 저장합니다.
+중간에 저장이 실패하면 해당 수집값 전체를 롤백합니다. 정상 커밋된 뒤에만 POST가 HTTP 204를 반환합니다.
+`host_id + collected_at`이 같은 지표는 중복 저장하지 않으며 동시 중복 요청도 기존 저장값을 유지합니다.
+PostgreSQL 시간 정밀도에 맞춰 수집·수신 시각은 마이크로초 단위로 저장합니다.
+지연 도착한 과거 지표도 이력에 저장하지만,
+최신값 조회에는 서버별 가장 최근 수집 시각의 지표만 반영합니다.
+수집·수신 시각은 `TIMESTAMPTZ`, 용량은 `BIGINT` 바이트로 저장합니다.
+
+DB의 지표는 자동 삭제하지 않습니다. 보관 기간과 이력 조회·차트는 후속 단계입니다.
+현재 `schema.sql`은 최초 생성용이며, 이후 기존 테이블 구조 변경은 별도 마이그레이션이 필요합니다.
+
+DB에 접속한 상태에서 저장 여부를 확인할 수 있습니다.
+
+```sql
+SELECT id, host_id, collected_at, received_at, cpu_used_percent
+FROM server_metrics
+ORDER BY collected_at DESC
+LIMIT 10;
+
+SELECT f.*
+FROM filesystem_metrics f
+JOIN server_metrics s ON s.id = f.metric_id
+ORDER BY s.collected_at DESC, f.position
+LIMIT 10;
+```
+
 ## API와 전송 동작
 
-- `GET /api/health`: 백엔드 실행 상태 확인
+- `GET /api/health`: 백엔드·DB 연결 상태 확인
 - `POST /api/metrics`: 수집 JSON 수신. 정상 수신은 HTTP 204, 필수값 누락·잘못된 값은 HTTP 400
 - `GET /api/metrics/latest`: 모든 서버의 최신값 목록. 각 항목에 `metrics`와 서버 수신 시각 `received_at` 포함
 - `GET /api/metrics/latest/{hostId}`: 특정 서버의 최신값. 기록이 없으면 HTTP 404
 
 POST 형식은 수집 로그의 JSON과 같습니다. 시간은 UTC, 용량은 바이트, 사용률은 0~100입니다.
-같은 `host_id`에 대해서는 `collected_at`이 더 최신인 데이터만 반영합니다.
-같은 시각의 중복 전송이나 오래된 데이터로 최신값을 덮어쓰지 않습니다.
+모든 수집 시점의 데이터를 DB에 저장하고 같은 시각의 중복 전송은 무시합니다.
+최신값은 `collected_at` 기준으로 조회하므로 오래된 데이터가 최신값을 덮어쓰지 않습니다.
 호스트 이름을 식별자로 사용하므로 이후 서버를 추가할 때 호스트 이름이 서로 달라야 합니다.
 화면에서는 `collected_at`과 `received_at`으로 수집·수신 시점을 확인할 수 있습니다.
 
@@ -162,7 +231,7 @@ POST 형식은 수집 로그의 JSON과 같습니다. 시간은 UTC, 용량은 �
 실패 샘플을 재전송하거나 과거 로그를 백엔드로 복구하는 기능은 없습니다.
 파일 기록에 실패해도 백엔드 전송은 시도합니다.
 독립 실행 시 `METRICS_API_URL`을 지정하지 않으면 기존처럼 파일·콘솔 기록만 수행합니다.
-백엔드 재시작 시 메모리의 최신값은 사라지고 다음 수신 시 채워집니다.
+백엔드 재시작 후에도 DB에 저장된 지표를 조회합니다. DB 저장 실패 시 메모리로 대체하지 않습니다.
 현재 백엔드에는 인증 기능이 없습니다. 수집기는 기본 네트워크에서 전송하며, 도메인 접근은 NPM을 경유합니다.
 추가 서버의 원격 수집기 연결은 후속 단계입니다.
 
@@ -208,11 +277,15 @@ docker build -t infra-monitor-collector:latest ./collector
 docker build -t infra-monitor-backend:latest ./backend
 mkdir -p collector_logs
 sudo chown 65534:65534 collector_logs
+# 위 PostgreSQL 설정 절차에 따라 .env 준비
 docker compose up -d
 docker compose logs -f --tail=10 collector
 ```
 
-백엔드만 로컬에서 개발할 때는 JDK 25를 준비한 후 실행합니다.
+백엔드만 로컬에서 개발할 때는 JDK 25를 준비합니다. 기본 DB 접속값은 `application.properties`를 사용합니다.
+다른 DB 주소·계정으로 검증할 때는 실행 터미널이나 IDE에서 `SPRING_DATASOURCE_URL`,
+`SPRING_DATASOURCE_USERNAME`, `SPRING_DATASOURCE_PASSWORD`로 덮어쓸 수 있습니다.
+Compose의 `.env`는 `bootRun`이 자동으로 읽지 않습니다.
 기본 포트는 8080이므로 사용 중인 포트가 있다면 아래처럼 다른 포트를 지정합니다.
 
 ```bash
@@ -250,3 +323,4 @@ CPU는 `vmstat 10`의 첫 행(부팅 이후 평균)을 제외하고, 이후 행�
 
 기준 문서: [Linux /proc](https://www.kernel.org/doc/html/latest/filesystems/proc.html),
 [Docker Compose 서비스 설정](https://docs.docker.com/reference/compose-file/services/).
+DB 초기화: [Spring Boot 공식 문서](https://docs.spring.io/spring-boot/how-to/data-initialization.html).
