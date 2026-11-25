@@ -5,9 +5,11 @@ services:
     image: infra-monitor-collector:latest
     restart: unless-stopped
     environment:
-      COLLECTION_INTERVAL_SECONDS: ${COLLECTION_INTERVAL_SECONDS:-5}
+      COLLECTION_INTERVAL_SECONDS: ${COLLECTION_INTERVAL_SECONDS:-10}
       HOST_PROC_PATH: /host/proc
       HOST_ROOT_PATH: /host/root
+      COLLECTOR_LOG_DIR: /app/collector_logs
+      LOG_MAX_BYTES: ${LOG_MAX_BYTES:-5242880}
     volumes:
       - type: bind
         source: /proc
@@ -19,6 +21,11 @@ services:
         source: /
         target: /host/root
         read_only: true
+        bind:
+          create_host_path: false
+      - type: bind
+        source: ./collector_logs
+        target: /app/collector_logs
         bind:
           create_host_path: false
     read_only: true

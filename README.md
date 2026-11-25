@@ -1,7 +1,7 @@
 # infra-monitor
 
 Linux 호스트 전체 CPU·메모리와 루트 파일시스템(`/`)을 수집하는 초기 데모입니다.
-백엔드·웹 화면·DB 저장은 아직 구현하지 않았으며, 5초마다 JSON 한 줄을 콘솔에 출력합니다.
+백엔드·웹 화면·DB 저장은 아직 구현하지 않았으며, 10초마다 JSON 한 줄을 콘솔과 파일에 출력합니다.
 
 ## Jenkins 배포 준비
 
@@ -47,7 +47,7 @@ docker compose ps
 docker compose logs -f --tail=10 collector
 ```
 
-첫 지표는 시작 약 5초 후 출력됩니다. 로그 보기를 종료하려면 `Ctrl+C`를 누릅니다.
+첫 지표는 시작 약 10초 후 출력됩니다. 로그 보기를 종료하려면 `Ctrl+C`를 누릅니다.
 수집기는 백그라운드에서 계속 실행됩니다.
 
 ```bash
@@ -60,18 +60,48 @@ docker compose down
 
 ## 설정
 
-기본 수집 간격은 5초입니다. 배포 폴더에서 `.env`를 만들면 변경할 수 있습니다.
+기본 수집 간격은 10초입니다. 배포 폴더에서 `.env`를 만들면 변경할 수 있습니다.
 이 파일은 Jenkins가 덮어쓰지 않습니다.
 
 ```bash
 cd /home/ubuntu/docker/projects/infra-monitor
-echo 'COLLECTION_INTERVAL_SECONDS=5' > .env
+echo 'COLLECTION_INTERVAL_SECONDS=10' > .env
 # 원하는 간격으로 수정 후 적용
 docker compose up -d
 ```
 
 최초 Jenkins 배포 후에는 서버의 Compose 파일과 로컬 이미지로 재실행할 수 있습니다.
 `docker compose restart`는 기존 컨테이너 재시작이며 새 이미지나 환경변수를 적용하지 않습니다.
+
+## 수집 로그 파일
+
+서버의 `/home/ubuntu/docker/projects/infra-monitor/collector_logs`에 저장합니다.
+
+```text
+collector_logs/
+  2026-11-25-1.log
+  2026-11-25-2.log
+  2026-11-26-1.log
+```
+
+- 한국 시간(UTC+9) 기준 날짜가 바뀌면 새 날짜의 1번 파일을 사용합니다.
+- 기본 파일당 5MiB(5,242,880바이트)이며, 다음 줄이 한도를 넘으면 순번을 증가시킵니다.
+  한 줄 자체가 한도보다 크면 해당 줄은 하나의 파일에 온전히 기록합니다.
+- 재시작·재배포 시 같은 날짜의 마지막 파일에 이어 쓰며, 가득 찼으면 다음 번호를 사용합니다.
+- 파일 개수·보관 기간 제한과 자동 삭제는 없습니다. 삭제는 운영자가 직접 관리합니다.
+- 수집 오류도 JSON 오류 기록으로 파일에 남깁니다. 폴더 권한·디스크 부족으로 기록할 수 없는 오류는 콘솔로 확인합니다.
+- `.env`의 `LOG_MAX_BYTES`로 파일당 크기를 변경할 수 있습니다.
+
+```bash
+cd /home/ubuntu/docker/projects/infra-monitor
+ls -lh collector_logs
+# 실제 생성된 파일명으로 바꿔서 확인
+tail -f collector_logs/2026-11-25-1.log
+```
+
+Jenkins는 최초 배포 시 호스트 로그 폴더를 준비하고 수집기 사용자(UID/GID 65534)에 소유권을 부여합니다.
+서버에서 파일을 직접 삭제할 때 권한이 없다면 `sudo`를 사용합니다. 재배포 시 기존 로그는 삭제하지 않습니다.
+Docker의 `json-file` 로그는 `docker compose logs`용 별도 사본이며, 이 사본만 기존 5MB·2개 제한을 유지합니다.
 
 ## Jenkins 없이 직접 실행할 경우
 
@@ -81,6 +111,8 @@ Windows Docker Desktop은 A서버 지표 검증에 사용할 수 없습니다.
 
 ```bash
 docker build -t infra-monitor-collector:latest ./collector
+mkdir -p collector_logs
+sudo chown 65534:65534 collector_logs
 docker compose up -d
 docker compose logs -f --tail=10 collector
 ```
@@ -94,7 +126,7 @@ docker compose logs -f --tail=10 collector
 - 용량은 바이트, 사용률은 퍼센트, 수집 시각은 UTC로 출력합니다. `host_id`는 호스트 `/etc/hostname`에서 읽습니다.
 
 호스트 `/proc`와 `/`는 읽기 전용으로 마운트합니다. 호스트 PID·네트워크 모드나 privileged 권한은 사용하지 않습니다.
-외부 포트와 CPU·메모리 제한은 설정하지 않았습니다. 로그는 파일당 5MB, 최대 2개로 제한합니다.
+외부 포트와 CPU·메모리 제한은 설정하지 않았습니다. 수집 로그 파일은 자동 삭제하지 않습니다.
 수집 오류는 표준 오류로 출력하고 다음 주기에 다시 시도합니다.
 
 ## A서버 검증
@@ -102,11 +134,11 @@ docker compose logs -f --tail=10 collector
 ```bash
 free -b
 df -B1 /
-vmstat 5
+vmstat 10
 ```
 
 JSON의 메모리 전체·가용량을 `free -b`와, 파일시스템 용량을 `df -B1 /`와 비교합니다.
-CPU는 `vmstat 5`의 첫 행(부팅 이후 평균)을 제외하고, 이후 행의 `100 - id - wa`와 비교합니다.
+CPU는 `vmstat 10`의 첫 행(부팅 이후 평균)을 제외하고, 이후 행의 `100 - id - wa`와 비교합니다.
 수집 시점이 달라 사용량은 조금 차이 날 수 있습니다.
 
 기준 문서: [Linux /proc](https://www.kernel.org/doc/html/latest/filesystems/proc.html),

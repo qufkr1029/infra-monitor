@@ -45,6 +45,12 @@ pipeline {
                     cp docker-compose.yml "$DEPLOY_DIR/docker-compose.yml"
                     cd "$DEPLOY_DIR"
                     docker compose config --quiet
+                    # The host bind directory must be writable by the collector's UID.
+                    docker run --rm --network none --read-only --user 0:0 \
+                        --cap-drop ALL --cap-add CHOWN \
+                        -v "$DEPLOY_DIR/collector_logs:/logs" \
+                        infra-monitor-collector:latest \
+                        python -c 'import os; os.chown("/logs", 65534, 65534)'
                     docker compose up -d --no-build --force-recreate
                     docker compose ps
                 '''
